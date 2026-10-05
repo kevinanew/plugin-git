@@ -246,10 +246,33 @@ func downloadCert(url string) (retStatus bool) {
 	return true
 }
 
-// shouldRetry returns true if the command should be re-executed. Currently
-// this only returns true if the remote ref does not exist.
+// shouldRetry also covers transient transport failures during fetch and
+// partial-clone checkout. Authentication and certificate errors are not retried.
 func shouldRetry(s string) bool {
-	return strings.Contains(s, "find remote ref")
+	s = strings.ToLower(s)
+	for _, message := range []string{
+		"find remote ref",
+		"failed to connect",
+		"could not resolve host",
+		"operation timed out",
+		"connection reset by peer",
+		"unexpected eof while reading",
+		"tls connection was non-properly terminated",
+		"early eof",
+		"unexpected disconnect while reading",
+		"requested url returned error: 429",
+		"requested url returned error: 502",
+		"requested url returned error: 503",
+		"requested url returned error: 504",
+		"rpc failed; curl 18 ",
+		"rpc failed; curl 56 ",
+		"rpc failed; curl 92 ",
+	} {
+		if strings.Contains(s, message) {
+			return true
+		}
+	}
+	return false
 }
 
 // retryExec is a helper function that retries a command.

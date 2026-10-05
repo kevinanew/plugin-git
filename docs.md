@@ -71,3 +71,9 @@ clone:
 | `git-user-email`          | _none_                              | Git email used when pull requests are used.                                                                                                                                |
 
 [workflowClone]: https://woodpecker-ci.org/docs/usage/workflow-syntax#clone
+
+## Retry behavior
+
+The existing `attempts` and `backoff` settings also apply to transient transport
+failures during fetch and partial-clone checkout, including connection failures,
+TLS EOF, truncated transfers, and HTTP 429/502/503/504 responses.
