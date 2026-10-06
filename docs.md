@@ -74,6 +74,11 @@ clone:
 
 ## Retry behavior
 
-The existing `attempts` and `backoff` settings also apply to transient transport
-failures during fetch and partial-clone checkout, including connection failures,
-TLS EOF, truncated transfers, and HTTP 429/502/503/504 responses.
+Every failed Git command is retried, regardless of the error, including DNS,
+authentication, certificate, and local filesystem failures. Each retry reruns only
+the failed command.
+
+`attempts` sets the number of additional retries after the initial execution
+(default: 5, for up to 6 executions). `backoff` sets the delay between retries
+(default: 5 seconds). Setting `attempts` to 0 disables retries. If all retries
+fail, the plugin returns the final command error and stops the clone.

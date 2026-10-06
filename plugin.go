@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -176,20 +174,17 @@ func (p Plugin) Exec() error {
 	}
 
 	for _, cmd := range cmds {
-		buf := new(bytes.Buffer)
 		cmd.Dir = p.Pipeline.Path
-		cmd.Stdout = io.MultiWriter(os.Stdout, buf)
-		cmd.Stderr = io.MultiWriter(os.Stderr, buf)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 		trace(cmd)
-		err := cmd.Run()
-		switch {
-		case err != nil && shouldRetry(buf.String()):
-			err = retryExec(cmd, p.Backoff.Duration, p.Backoff.Attempts)
-			if err != nil {
+		if err := cmd.Run(); err != nil {
+			if p.Backoff.Attempts <= 0 {
 				return err
 			}
-		case err != nil:
-			return err
+			if err := retryExec(cmd, p.Backoff.Duration, p.Backoff.Attempts); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -246,42 +241,13 @@ func downloadCert(url string) (retStatus bool) {
 	return true
 }
 
-// shouldRetry also covers transient transport failures during fetch and
-// partial-clone checkout. Authentication and certificate errors are not retried.
-func shouldRetry(s string) bool {
-	s = strings.ToLower(s)
-	for _, message := range []string{
-		"find remote ref",
-		"failed to connect",
-		"could not resolve host",
-		"operation timed out",
-		"connection reset by peer",
-		"unexpected eof while reading",
-		"tls connection was non-properly terminated",
-		"early eof",
-		"unexpected disconnect while reading",
-		"requested url returned error: 429",
-		"requested url returned error: 502",
-		"requested url returned error: 503",
-		"requested url returned error: 504",
-		"rpc failed; curl 18 ",
-		"rpc failed; curl 56 ",
-		"rpc failed; curl 92 ",
-	} {
-		if strings.Contains(s, message) {
-			return true
-		}
-	}
-	return false
-}
-
 // retryExec is a helper function that retries a command.
 func retryExec(cmd *exec.Cmd, backoff time.Duration, retries int) (err error) {
 	for range retries {
 		// signal intent to retry
 		fmt.Printf("retry in %v\n", backoff)
 
-		// wait 5 seconds before retry
+		// 按配置的间隔等待后重试。
 		<-time.After(backoff)
 
 		// copy the original command

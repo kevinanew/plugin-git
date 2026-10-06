@@ -13,42 +13,6 @@ import (
 	"time"
 )
 
-func TestShouldRetry(t *testing.T) {
-	cases := []struct {
-		name   string
-		output string
-		want   bool
-	}{
-		{"missing ref", "fatal: couldn't find remote ref refs/heads/main", true},
-		{"CI connection failure", "fatal: unable to access 'https://github.com/example/repo.git/': Failed to connect to github.com:443 after 75959 ms: Could not connect to server", true},
-		{"CI TLS EOF", "error: RPC failed; curl 56 OpenSSL SSL_read: OpenSSL/3.5.7: error:0A000126:SSL routines::unexpected eof while reading, errno 0", true},
-		{"partial checkout EOF", "fatal: early EOF\nfatal: could not fetch object from promisor remote", true},
-		{"DNS", "fatal: Could not resolve host: github.com", true},
-		{"timeout", "fatal: Operation timed out after 30000 milliseconds", true},
-		{"SSH reset", "kex_exchange_identification: read: Connection reset by peer", true},
-		{"TLS termination", "gnutls_recv error (-110): The TLS connection was non-properly terminated.", true},
-		{"HTTP unavailable", "fatal: The requested URL returned error: 503", true},
-		{"HTTP throttling", "fatal: The requested URL returned error: 429", true},
-		{"HTTP2", "error: RPC failed; curl 92 HTTP/2 stream 7 was not closed cleanly: CANCEL", true},
-		{"truncated response", "error: RPC failed; curl 18 transfer closed with outstanding read data remaining", true},
-		{"authentication", "fatal: Authentication failed for 'https://github.com/example/repo.git/'", false},
-		{"forbidden", "fatal: The requested URL returned error: 403", false},
-		{"not found", "fatal: repository 'https://github.com/example/repo.git/' not found", false},
-		{"SSH access", "git@github.com: Permission denied (publickey).", false},
-		{"certificate", "fatal: SSL certificate problem: unable to get local issuer certificate", false},
-		{"local storage", "fatal: unable to write new index file: No space left on device", false},
-		{"merge conflict", "CONFLICT (content): Merge conflict in README", false},
-		{"success", "", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := shouldRetry(tc.output); got != tc.want {
-				t.Fatalf("shouldRetry(%q) = %v, want %v", tc.output, got, tc.want)
-			}
-		})
-	}
-}
-
 // Use a real git-http-backend, injecting failures only at the HTTP boundary
 // so fetch and partial checkout still execute their actual Git operations.
 func TestPluginRetriesGitHTTP(t *testing.T) {
@@ -81,7 +45,10 @@ func TestPluginRetriesGitHTTP(t *testing.T) {
 		{"fetch recovers", 1, []int{503, 503}, 2, false, 2},
 		{"partial checkout recovers", 2, []int{503, 503}, 2, false, 2},
 		{"retry limit", 1, []int{503, 503, 503, 503}, 2, true, 3},
-		{"permanent failure", 1, []int{403}, 5, true, 1},
+		{"authentication recovers", 1, []int{401}, 2, false, 1},
+		{"forbidden recovers", 1, []int{403, 403}, 2, false, 2},
+		{"permanent failure", 1, []int{403, 403, 403, 403}, 2, true, 3},
+		{"retries disabled", 1, []int{503}, 0, true, 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
